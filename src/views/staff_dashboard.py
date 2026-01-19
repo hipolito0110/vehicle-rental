@@ -14,7 +14,7 @@ class StaffDashboard(tk.Frame):
         self.pack(fill="both", expand=True)
         
         self.create_layout()
-        self.show_returns_view()
+        self.show_pending_view()  # Show pending approvals by default
 
     def create_layout(self):
         # Top Bar
@@ -40,9 +40,8 @@ class StaffDashboard(tk.Frame):
         self.side_bar.pack(side="left", fill="y")
         self.side_bar.pack_propagate(False)
 
+        self.create_sidebar_button("Pending Approvals", self.show_pending_view)
         self.create_sidebar_button("Process Returns", self.show_returns_view)
-        if self.user.role == "Receptionist":
-            self.create_sidebar_button("Manage Fleet", self.show_fleet_view)
 
         # Content Area
         self.content_area = tk.Frame(self.main_container, bg="white")
@@ -55,6 +54,93 @@ class StaffDashboard(tk.Frame):
     def clear_content(self):
         for widget in self.content_area.winfo_children():
             widget.destroy()
+
+    def show_pending_view(self):
+        self.clear_content()
+        tk.Label(self.content_area, text="Pending Approvals", font=("Segoe UI", 20, "bold"), bg="white").pack(anchor="w", pady=(0, 20))
+        
+        self.pending_frame = tk.Frame(self.content_area, bg="white")
+        self.pending_frame.pack(fill="both", expand=True)
+        self.setup_pending_view()
+
+    def setup_pending_view(self):
+        self.pend_scroll = ScrollableFrame(self.pending_frame)
+        self.pend_scroll.pack(fill="both", expand=True, padx=10)
+        self.load_pending()
+
+    def load_pending(self):
+        for widget in self.pend_scroll.scrollable_frame.winfo_children():
+            widget.destroy()
+        
+        pending = self.rental_controller.get_pending_reservations()
+        
+        if not pending:
+            tk.Label(self.pend_scroll.scrollable_frame, text="No pending reservations", 
+                    font=("Segoe UI", 14), fg="#7f8c8d").pack(pady=50)
+            return
+        
+        columns = 3
+        row = 0
+        col = 0
+
+        for p in pending:
+            self.create_pending_card(p, row, col)
+            col += 1
+            if col >= columns:
+                col = 0
+                row += 1
+
+    def create_pending_card(self, pending, row, col):
+        card = RoundedFrame(self.pend_scroll.scrollable_frame, width=280, height=260, corner_radius=15, bg_color="#fff3cd")
+        card.grid(row=row, column=col, padx=10, pady=10)
+
+        # Header
+        tk.Label(card.inner_frame, text=f"Reservation #{pending['reservation_id']}", 
+                font=("Segoe UI", 10, "bold"), bg="#fff3cd", fg="#856404").pack(anchor="w", pady=(5,0))
+        
+        # Customer info
+        tk.Label(card.inner_frame, text=f"Customer: {pending['full_name']}", 
+                font=("Segoe UI", 10), bg="#fff3cd").pack(anchor="w")
+        tk.Label(card.inner_frame, text=f"({pending['username']})", 
+                font=("Segoe UI", 8), bg="#fff3cd", fg="#7f8c8d").pack(anchor="w")
+        
+        # Vehicle info
+        tk.Label(card.inner_frame, text=f"{pending['brand']} {pending['model']}", 
+                font=("Segoe UI", 11, "bold"), bg="#fff3cd").pack(anchor="w", pady=(10,0))
+        tk.Label(card.inner_frame, text=f"Plate: {pending['license_plate']}", 
+                font=("Segoe UI", 9), bg="#fff3cd").pack(anchor="w")
+        
+        # Dates
+        tk.Label(card.inner_frame, text=f"{pending['start_date']} to {pending['end_date']}", 
+                font=("Segoe UI", 9), bg="#fff3cd").pack(anchor="w", pady=(5,0))
+        tk.Label(card.inner_frame, text=f"Cost: ₱{pending['total_cost']:,.2f}", 
+                font=("Segoe UI", 10, "bold"), fg="#27ae60", bg="#fff3cd").pack(anchor="w", pady=(5,10))
+        
+        # Action buttons
+        btn_frame = tk.Frame(card.inner_frame, bg="#fff3cd")
+        btn_frame.pack(fill="x", pady=(5,0))
+        
+        def approve():
+            try:
+                self.rental_controller.approve_reservation(pending['reservation_id'])
+                messagebox.showinfo("Success", f"Reservation #{pending['reservation_id']} approved!")
+                self.load_pending()
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        def reject():
+            if messagebox.askyesno("Confirm", f"Reject reservation #{pending['reservation_id']}?"):
+                try:
+                    self.rental_controller.reject_reservation(pending['reservation_id'])
+                    messagebox.showinfo("Success", f"Reservation #{pending['reservation_id']} rejected.")
+                    self.load_pending()
+                except Exception as e:
+                    messagebox.showerror("Error", str(e))
+        
+        RoundedButton(btn_frame, width=110, height=30, corner_radius=8, bg_color="#27ae60", 
+                     fg_color="white", text="Approve", command=approve).pack(side="left", padx=2)
+        RoundedButton(btn_frame, width=110, height=30, corner_radius=8, bg_color="#e74c3c", 
+                     fg_color="white", text="Reject", command=reject).pack(side="left", padx=2)
 
     def show_returns_view(self):
         self.clear_content()
@@ -149,130 +235,6 @@ class StaffDashboard(tk.Frame):
 
         tk.Button(popup, text="Confirm Return", command=confirm, bg="#f39c12", fg="white", font=("Segoe UI", 12, "bold"), relief="flat", pady=10).pack(fill="x", padx=20, pady=20)
 
-    def setup_fleet_view(self):
-        # Add Vehicle Button (Opens Popup)
-        RoundedButton(self.fleet_frame, width=200, height=40, corner_radius=10, bg_color="#27ae60", fg_color="white", 
-                      text="+ Add New Vehicle", command=self.show_add_vehicle_popup).pack(fill="x", padx=20, pady=10)
-
-        self.fleet_scroll = ScrollableFrame(self.fleet_frame)
-        self.fleet_scroll.pack(fill="both", expand=True, padx=10)
-        self.load_fleet()
-
-    def load_fleet(self):
-        for widget in self.fleet_scroll.scrollable_frame.winfo_children():
-            widget.destroy()
-        
-        vehicles = self.rental_controller.get_all_vehicles()
-        
-        columns = 3
-        row = 0
-        col = 0
-
-        for v in vehicles:
-            self.create_fleet_card(v, row, col)
-            col += 1
-            if col >= columns:
-                col = 0
-                row += 1
-
-    def create_fleet_card(self, vehicle, row, col):
-        card = RoundedFrame(self.fleet_scroll.scrollable_frame, width=280, height=220, corner_radius=15, bg_color="#f8f9fa")
-        card.grid(row=row, column=col, padx=10, pady=10)
-
-        # Image
-        img_path = self.get_image_path(vehicle['model'])
-        img = ImageHelper.load_resized_image(img_path, size=(150, 100))
-        if img:
-            lbl = tk.Label(card.inner_frame, image=img, bg="#f8f9fa")
-            lbl.image = img
-            lbl.pack(pady=5)
-
-        tk.Label(card.inner_frame, text=f"{vehicle['brand']} {vehicle['model']}", font=("Segoe UI", 11, "bold"), bg="#f8f9fa").pack()
-        tk.Label(card.inner_frame, text=f"{vehicle['license_plate']}", font=("Segoe UI", 9), bg="#f8f9fa", fg="#7f8c8d").pack()
-        tk.Label(card.inner_frame, text=f"Status: {vehicle['status']}", font=("Segoe UI", 9, "bold"), 
-                 fg="green" if vehicle['status']=='Available' else "red", bg="#f8f9fa").pack(pady=5)
-
-        # Click
-        card.bind("<Button-1>", lambda e, v=vehicle: self.show_edit_vehicle_popup(v))
-        card.inner_frame.bind("<Button-1>", lambda e, v=vehicle: self.show_edit_vehicle_popup(v))
-        for child in card.inner_frame.winfo_children():
-            child.bind("<Button-1>", lambda e, v=vehicle: self.show_edit_vehicle_popup(v))
-
-    def show_add_vehicle_popup(self):
-        popup = tk.Toplevel(self)
-        popup.title("Add New Vehicle")
-        popup.geometry("400x500")
-        popup.configure(bg="white")
-        popup.grab_set()
-
-        self._create_vehicle_form(popup, is_edit=False)
-
-    def show_edit_vehicle_popup(self, vehicle):
-        popup = tk.Toplevel(self)
-        popup.title(f"Edit {vehicle['brand']} {vehicle['model']}")
-        popup.geometry("400x500")
-        popup.configure(bg="white")
-        popup.grab_set()
-
-        self._create_vehicle_form(popup, is_edit=True, vehicle=vehicle)
-
-    def _create_vehicle_form(self, popup, is_edit, vehicle=None):
-        tk.Label(popup, text="Vehicle Details", font=("Segoe UI", 14, "bold"), bg="white").pack(pady=10)
-        
-        form = tk.Frame(popup, bg="white")
-        form.pack(padx=20, pady=10)
-
-        entries = {}
-        fields = ["Brand", "Model", "Year", "License Plate", "Type", "Daily Rate"]
-        keys = ["brand", "model", "year", "license_plate", "type", "daily_rate"]
-
-        for i, field in enumerate(fields):
-            tk.Label(form, text=f"{field}:", bg="white").grid(row=i, column=0, sticky="e", pady=5)
-            if field == "Type":
-                entry = ttk.Combobox(form, values=["Car", "Truck", "SUV", "Van", "Motorcycle"])
-            else:
-                entry = tk.Entry(form)
-            
-            entry.grid(row=i, column=1, sticky="w", padx=10, pady=5)
-            entries[keys[i]] = entry
-            
-            if is_edit and vehicle:
-                if field == "Type":
-                    entry.set(vehicle[keys[i]])
-                else:
-                    entry.insert(0, str(vehicle[keys[i]]))
-
-        def save():
-            data = {k: entries[k].get() for k in keys}
-            if not all(data.values()):
-                messagebox.showerror("Error", "All fields are required")
-                return
-
-            try:
-                if is_edit:
-                    self.rental_controller.update_vehicle(vehicle['vehicle_id'], data['brand'], data['model'], 
-                                                        data['year'], data['license_plate'], data['type'], data['daily_rate'])
-                    messagebox.showinfo("Success", "Vehicle updated")
-                else:
-                    self.rental_controller.add_vehicle(data['brand'], data['model'], data['year'], 
-                                                     data['license_plate'], data['type'], data['daily_rate'])
-                    messagebox.showinfo("Success", "Vehicle added")
-                popup.destroy()
-                self.load_fleet()
-            except Exception as e:
-                messagebox.showerror("Error", str(e))
-
-        tk.Button(popup, text="Save Vehicle", command=save, bg="#27ae60", fg="white", font=("Segoe UI", 10, "bold"), relief="flat", pady=5).pack(fill="x", padx=20, pady=10)
-
-        if is_edit:
-            def delete():
-                if messagebox.askyesno("Confirm", "Delete this vehicle?"):
-                    self.rental_controller.delete_vehicle(vehicle['vehicle_id'])
-                    popup.destroy()
-                    self.load_fleet()
-            
-            tk.Button(popup, text="Delete Vehicle", command=delete, bg="#e74c3c", fg="white", font=("Segoe UI", 10, "bold"), relief="flat", pady=5).pack(fill="x", padx=20, pady=(0, 20))
-
     def get_image_path(self, model):
         base_path = os.path.join(os.path.dirname(__file__), "..", "img", "vehicles")
         clean_model = model.replace(" ", "")
@@ -287,12 +249,6 @@ class StaffDashboard(tk.Frame):
             if os.path.exists(p):
                 return p
         return ""
-
-    def process_return(self):
-        pass # Replaced by popup logic
-
-    def add_vehicle(self):
-        pass # Replaced by popup logic
 
 
 

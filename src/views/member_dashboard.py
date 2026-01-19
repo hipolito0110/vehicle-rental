@@ -198,20 +198,23 @@ class MemberDashboard(tk.Frame):
         # Action Button
         def confirm_rent():
             eq_ids = [eid for eid, var in equipment_vars.items() if var.get()]
-            success = self.rental_controller.create_reservation(
-                self.user.user_id,
-                vehicle['vehicle_id'],
-                start_date.get_date(),
-                end_date.get_date(),
-                insurance_var.get(),
-                eq_ids
-            )
-            if success:
-                messagebox.showinfo("Success", "Reservation created successfully!")
-                popup.destroy()
-                self.load_vehicles()
-            else:
-                messagebox.showerror("Error", "Failed to create reservation.")
+            try:
+                success = self.rental_controller.create_reservation(
+                    self.user.user_id,
+                    vehicle['vehicle_id'],
+                    start_date.get_date(),
+                    end_date.get_date(),
+                    insurance_var.get(),
+                    eq_ids
+                )
+                if success:
+                    messagebox.showinfo("Success", "Reservation created! Waiting for staff approval.")
+                    popup.destroy()
+                    self.load_vehicles()
+                else:
+                    messagebox.showerror("Error", "Failed to create reservation.")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
 
         tk.Button(popup, text="Confirm Reservation", command=confirm_rent, bg="#27ae60", fg="white", font=("Segoe UI", 12, "bold"), relief="flat", pady=10).pack(fill="x", padx=20, pady=20)
 
@@ -246,7 +249,17 @@ class MemberDashboard(tk.Frame):
             lbl.pack(pady=5)
 
         tk.Label(card.inner_frame, text=f"{res['brand']} {res['model']}", font=("Segoe UI", 11, "bold"), bg="#f8f9fa").pack()
-        tk.Label(card.inner_frame, text=f"Status: {res['status']}", font=("Segoe UI", 9), fg="blue" if res['status']=='Active' else "black", bg="#f8f9fa").pack()
+        
+        # Status with color coding
+        status_colors = {
+            'Pending': '#f39c12',    # Orange
+            'Active': '#27ae60',     # Green
+            'Completed': '#7f8c8d',  # Gray
+            'Cancelled': '#e74c3c'   # Red
+        }
+        status_color = status_colors.get(res['status'], 'black')
+        tk.Label(card.inner_frame, text=f"Status: {res['status']}", font=("Segoe UI", 9, "bold"), 
+                 fg=status_color, bg="#f8f9fa").pack()
         tk.Label(card.inner_frame, text=f"{res['start_date']} to {res['end_date']}", font=("Segoe UI", 9), bg="#f8f9fa").pack()
 
         # Click to view details/cancel
@@ -272,15 +285,29 @@ class MemberDashboard(tk.Frame):
         """
         tk.Label(popup, text=details, justify="left", bg="white", font=("Segoe UI", 10)).pack(pady=10)
 
-        if res['status'] == 'Active':
+        # Only allow cancellation of Pending reservations
+        if res['status'] == 'Pending':
             def cancel():
                 if messagebox.askyesno("Confirm", "Are you sure you want to cancel this reservation?"):
-                    self.rental_controller.cancel_reservation(res['reservation_id'], res['vehicle_id'])
-                    messagebox.showinfo("Success", "Reservation cancelled.")
-                    popup.destroy()
-                    self.show_history_view() # Refresh
+                    try:
+                        self.rental_controller.cancel_reservation(res['reservation_id'])
+                        messagebox.showinfo("Success", "Reservation cancelled.")
+                        popup.destroy()
+                        self.show_history_view() # Refresh
+                    except Exception as e:
+                        messagebox.showerror("Error", str(e))
 
-            tk.Button(popup, text="Cancel Reservation", command=cancel, bg="#e74c3c", fg="white", font=("Segoe UI", 10, "bold"), relief="flat", pady=5).pack(pady=20)
+            tk.Button(popup, text="Cancel Reservation", command=cancel, bg="#e74c3c", fg="white", 
+                     font=("Segoe UI", 10, "bold"), relief="flat", pady=5).pack(pady=20)
+        elif res['status'] == 'Active':
+            tk.Label(popup, text="Contact staff to return the vehicle", bg="white", fg="#7f8c8d", 
+                    font=("Segoe UI", 9, "italic")).pack(pady=10)
+        elif res['status'] == 'Completed':
+            tk.Label(popup, text="This rental has been completed", bg="white", fg="#27ae60", 
+                    font=("Segoe UI", 9, "italic")).pack(pady=10)
+        elif res['status'] == 'Cancelled':
+            tk.Label(popup, text="This reservation was cancelled", bg="white", fg="#e74c3c", 
+                    font=("Segoe UI", 9, "italic")).pack(pady=10)
 
 
 
